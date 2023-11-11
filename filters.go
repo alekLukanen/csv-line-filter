@@ -2,7 +2,7 @@ package csvLineFilter
 
 import (
 	"bufio"
-	"errors"
+	"bytes"
 	"io"
 	"regexp"
 )
@@ -22,17 +22,31 @@ func NewCSVLineFilter(reader io.Reader, expression string) (*CSVLineFilter, erro
 		return nil, err
 	}
 
+	scanner := bufio.NewScanner(reader)
+	scanner.Split(scanLines)
+
 	return &CSVLineFilter{
 		Reader:            reader,
 		RegularExpression: regularExpression,
-		scanner:           bufio.NewScanner(reader),
+		scanner:           scanner,
 	}, nil
 }
 
 func (obj *CSVLineFilter) Read(buffer []byte) (int, error) {
 
-	if len(buffer) == 0 {
+	bufferLength := len(buffer)
+	if bufferLength == 0 {
 		return 0, nil
+	}
+
+	if obj.currentLineBuffer != nil {
+		currentLineBufferLength := len(*obj.currentLineBuffer)
+		if obj.currentLineIndex < currentLineBufferLength {
+			maxBufferLength := intMin(bufferLength, currentLineBufferLength-obj.currentLineIndex)
+			copy(buffer[0:maxBufferLength], (*obj.currentLineBuffer)[obj.currentLineIndex:obj.currentLineIndex+maxBufferLength])
+			obj.currentLineIndex = obj.currentLineIndex + maxBufferLength
+			return maxBufferLength, nil
+		}
 	}
 
 	isEndOfFile := true
@@ -51,10 +65,40 @@ func (obj *CSVLineFilter) Read(buffer []byte) (int, error) {
 	}
 
 	currentLineBufferLength := len(*obj.currentLineBuffer)
-	if len(buffer) < currentLineBufferLength {
-		return 0, errors.New("buffer too small")
-	}
+	maxLineBufferLength := intMin(bufferLength, currentLineBufferLength)
+	obj.currentLineIndex = maxLineBufferLength
+	copy(buffer[0:maxLineBufferLength], (*obj.currentLineBuffer)[0:maxLineBufferLength])
+	return maxLineBufferLength, nil
+}
 
-	copy(buffer[0:currentLineBufferLength], (*obj.currentLineBuffer)[:])
-	return currentLineBufferLength, nil
+func intMin(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+// Need to use this from the scanner package but without
+// removing the newline
+func scanLines(data []byte, atEOF bool) (advance int, token []byte, err error) {
+	if atEOF && len(data) == 0 {
+		return 0, nil, nil
+	}
+	if i := bytes.IndexByte(data, '\n'); i >= 0 {
+		// We have a full newline-terminated line.
+		return i + 1, dropCR(data[0 : i+1]), nil
+	}
+	// If we're at EOF, we have a final, non-terminated line. Return it.
+	if atEOF {
+		return len(data), dropCR(data), nil
+	}
+	// Request more data.
+	return 0, nil, nil
+}
+
+func dropCR(data []byte) []byte {
+	if len(data) > 0 && data[len(data)-1] == '\r' {
+		return data[0 : len(data)-1]
+	}
+	return data
 }
