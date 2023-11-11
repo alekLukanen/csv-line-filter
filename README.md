@@ -10,50 +10,50 @@ go get github.com/alekLukanen/csv-line-filter
 ```
 
 Then you can import and use the package
-```
+```go
 package main
 
 import (
     "os"
     "log"
 
-	"github.com/alekLukanen/csv-line-filter"
+    "github.com/alekLukanen/csv-line-filter"
 )
 
 func main() {
 
     file, err := os.Open("./your-file.csv")
-	if err != nil {
-		log.Fatal(err)
-	}
+    if err != nil {
+        log.Fatal(err)
+    }
 
     close := func(err error) {
         file.Close()
-		if err != nil {
-			log.Fatal(err)
-		}
-		log.Fatal("issue found")
-	}
+        if err != nil {
+            log.Fatal(err)
+        }
+        log.Fatal("issue found")
+    }
     defer close()
 
     csvLineFilterReader, err := csvLineFilter.NewCSVLineFilter(compressedCsvIndexFileReader, `<regexp-here>`)
-	if err != nil {
-		close(err)
-	}
+    if err != nil {
+        close(err)
+    }
 
-	csvReader := csv.NewReader(csvLineFilterReader)
+    csvReader := csv.NewReader(csvLineFilterReader)
 
     data := make([][]string, 0, 100)
     for {
-		line, err := csvReader.Read()
-		if err == io.EOF {
-			break
-		} else if err != nil {
-			close(err)
-		}
+        line, err := csvReader.Read()
+        if err == io.EOF {
+            break
+        } else if err != nil {
+            close(err)
+        }
 
-		data = append(data, line)
-	}
+        data = append(data, line)
+    }
 
     log.Printf("total lines: %d", len(data))
 }
