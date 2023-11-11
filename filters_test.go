@@ -4,10 +4,10 @@ import (
 	"encoding/csv"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"path"
 	"reflect"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -27,7 +27,7 @@ column_a,column_b,column_c
 		t.Fatal(err)
 	}
 
-	resultData, err := ioutil.ReadAll(csvLineFilterReader)
+	resultData, err := io.ReadAll(csvLineFilterReader)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -106,9 +106,9 @@ func BenchmarkLineFilteredCSVFile(b *testing.B) {
 
 	lineCount := 10_000
 
-	dir, err := ioutil.TempDir("", "benchmark")
+	dir, err := os.MkdirTemp("", "benchmark")
 	if err != nil {
-		return
+		b.Fatal(err)
 	}
 	defer os.RemoveAll(dir)
 
@@ -125,35 +125,40 @@ func BenchmarkLineFilteredCSVFile(b *testing.B) {
 	}
 	defer file.Close()
 
+	close := func(err error) {
+		file.Close()
+		os.RemoveAll(dir)
+		if err != nil {
+			b.Fatal(err)
+		}
+	}
+
 	b.ResetTimer()
 
 	csvLineFilterReader, err := NewCSVLineFilter(file, `a1\d0,`)
 	if err != nil {
-		file.Close()
-		os.RemoveAll(dir)
-		b.Fatal(err)
+		close(err)
 	}
 
 	csvReader := csv.NewReader(csvLineFilterReader)
 
-	data := make([]string, 0, lineCount*3)
+	data := make([][]string, 0, lineCount*3)
 	for {
 		line, err := csvReader.Read()
 		if err == io.EOF {
 			break
 		} else if err != nil {
-			file.Close()
-			os.RemoveAll(dir)
-			b.Fatal(err)
+			close(err)
 		}
 
-		for _, el := range line {
-			data = append(data, el)
-		}
+		data = append(data, line)
 	}
 
-	if len(data) != 30 {
-		b.Fatalf("expected 100 items but found: %d", len(data))
+	b.StopTimer()
+
+	if len(data) != 10 {
+		close(nil)
+		b.Fatalf("expected items incorrect: %d", len(data))
 	}
 
 }
@@ -161,10 +166,15 @@ func BenchmarkLineFilteredCSVFile(b *testing.B) {
 func BenchmarkUnfilteredCSVFile(b *testing.B) {
 
 	lineCount := 10_000
-
-	dir, err := ioutil.TempDir("", "benchmark")
+	expression := `a1\d0$`
+	regularExpression, err := regexp.Compile(expression)
 	if err != nil {
-		return
+		b.Fatal(err)
+	}
+
+	dir, err := os.MkdirTemp("", "benchmark")
+	if err != nil {
+		b.Fatal(err)
 	}
 	defer os.RemoveAll(dir)
 
@@ -181,22 +191,37 @@ func BenchmarkUnfilteredCSVFile(b *testing.B) {
 	}
 	defer file.Close()
 
+	close := func(err error) {
+		file.Close()
+		os.RemoveAll(dir)
+		if err != nil {
+			b.Fatal(err)
+		}
+	}
+
 	b.ResetTimer()
 
 	csvReader := csv.NewReader(file)
 
-	data := make([][]string, lineCount)
+	data := make([][]string, 0, lineCount)
 	for {
 		line, err := csvReader.Read()
 		if err == io.EOF {
 			break
 		} else if err != nil {
-			file.Close()
-			os.RemoveAll(dir)
-			b.Fatal(err)
+			close(err)
 		}
 
-		data = append(data, line)
+		if regularExpression.MatchString(line[0]) {
+			data = append(data, line)
+		}
+	}
+
+	b.StopTimer()
+
+	if len(data) != 10 {
+		close(nil)
+		b.Fatalf("expected items incorrect: %d", len(data))
 	}
 
 }
